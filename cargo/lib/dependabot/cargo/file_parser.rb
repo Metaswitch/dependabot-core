@@ -171,17 +171,32 @@ module Dependabot
                 "cargo config"
         end
 
-        # Use known values from crates.microsoft.com rather than
-        # querying them, which avoids having to handle authentication
-        # and the unusual "sparse+..." URL.
+        # Handling sparse registries in common::lib::Dependabot::Source is not 
+        # impossible, but there are only two such "sparse-only" registries which we 
+        # care about ("sparse-only" meaning doesn't support querying via the 
+        # "non-standard API" https://#{registry.dl}/#{crate} on which we otherwise 
+        # rely). Both of those registries would also require logic for client
+        # authentication if we do this in Source, so we use known values here to avoid
+        # this, but record that these are sparse so we can query crates in a way that
+        # they support.
         if index_url == "sparse+https://crates.microsoft.com/index/"
           {
-            type: "registry",
+            type: "registry+sparse",
             name: registry_name,
             index: index_url,
             dl: "https://crates.microsoft.com/api/v1/crates",
             api: "https://crates.microsoft.com"
           }
+
+        elsif index_url == "sparse+https://pkgs.dev.azure.com/msazuredev/AzureForOperators/_packaging/rust/Cargo/index/"
+          {
+            type: "registry+sparse",
+            name: registry_name,
+            index: index_url,
+            dl: nil, # We can only query version info using the sparse API for this registry.
+            api: "https://pkgs.dev.azure.com/msazuredev/AzureForOperators/_packaging/rust/Cargo/index"
+          }
+          
         else
           source = Source.from_url(index_url)
           registry_fetcher = RegistryFetcher.new(
@@ -220,7 +235,8 @@ module Dependabot
         @cargo_config ||=
           Pathname
             .new(Dir.pwd)
-            .ascend.map { |p| p + ".cargo/config" }
+            .ascend.map { |p| [p + ".cargo/config", p + ".cargo/config.toml"] }
+            .flatten
             .chain(cargo_home_dir.nil? ? [] : [Pathname.new(cargo_home_dir)])
             .select(&:file?)
             .map { |f| TomlRB.load_file(f) }
