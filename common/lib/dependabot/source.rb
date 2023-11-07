@@ -68,7 +68,7 @@ module Dependabot
         m = url_string.match(source_info[:regex])
         return source_info[:factory].call(m.named_captures) if m
       end
-      puts "Source.from_url failed to find source for: #{url_string}"
+      raise "Source.from_url failed to find source for: #{url_string}"
     end
 
     def initialize(provider:, repo:, directory: nil, branch: nil, commit: nil,
