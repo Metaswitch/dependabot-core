@@ -69,7 +69,8 @@ module Dependabot
         end
 
         def available_versions
-          # Sparse registries return listings in different formats.
+          # Sparse registries return listings in a different format to the "default"
+          # undocumented API on which we rely when our source isn't sparse.
           if is_sparse
             crates_listing.
               reject { |v| v["yanked"] }.
@@ -127,7 +128,9 @@ module Dependabot
           # Default request headers
           hdrs = { "User-Agent" => "Dependabot (dependabot.com)" }
 
-          registry_token_var_name = "CARGO_REGISTRIES_#{registry_name.upcase}_TOKEN"
+          # See https://doc.rust-lang.org/cargo/reference/environment-variables.html
+          # for details on how this variable name is decided.
+          registry_token_var_name = "CARGO_REGISTRIES_#{registry_name.upcase.gsub '/[^0-9a-z]/i', '_'}_TOKEN"
           raise "Must specify #{registry_token_var_name}" if ENV[registry_token_var_name].nil?
           hdrs["Authorization"] = ENV[registry_token_var_name]
           

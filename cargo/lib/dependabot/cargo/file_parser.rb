@@ -180,7 +180,7 @@ module Dependabot
           {
             type: "registry+sparse",
             name: registry_name,
-            index: index_url[7..-2], # Chop off the final /.
+            index: index_url.delete_prefix("sparse+").delete_suffix("/"),
             dl: nil,
             api: nil
           }
