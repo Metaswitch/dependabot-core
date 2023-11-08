@@ -119,20 +119,17 @@ module Dependabot
 
         def crates_listing_sparse
           info = dependency.requirements.map { |r| r[:source] }.compact.first
-          api = info && info[:api] 
-          raise "Registry uses sparse protocol but no API URI found" if api.nil?
+          index = info && info[:index] 
+          registry_name = info && info[:name]
+          raise "Registry uses sparse protocol but no index URI found" if index.nil?
+          raise "Registry uses sparse protocol but no registry name found" if registry_name.nil?
 
           # Default request headers
           hdrs = { "User-Agent" => "Dependabot (dependabot.com)" }
 
-          # crates.microsoft.com, pkgs.dev.azure.com require an auth token
-          if api.include? "crates.microsoft.com"
-            raise "Must specify CARGO_REGISTRIES_CRATES_MS_TOKEN" if ENV["CARGO_REGISTRIES_CRATES_MS_TOKEN"].nil?
-            hdrs["Authorization"] = ENV["CARGO_REGISTRIES_CRATES_MS_TOKEN"]
-          elsif api.include? "pkgs.dev.azure.com"
-            raise "Must specify CARGO_REGISTRIES_AFO_TOKEN" if ENV["CARGO_REGISTRIES_AFO_TOKEN"].nil?
-            hdrs["Authorization"] = ENV["CARGO_REGISTRIES_AFO_TOKEN"]
-          end
+          registry_token_var_name = "CARGO_REGISTRIES_#{registry_name.upcase}_TOKEN"
+          raise "Must specify #{registry_token_var_name}" if ENV[registry_token_var_name].nil?
+          hdrs["Authorization"] = ENV[registry_token_var_name]
           
           name = dependency.name
           prefix = case name.length
@@ -143,9 +140,10 @@ module Dependabot
           else
             "#{name[0..1]}/#{name[2..3]}"
           end
+          prefix = prefix.downcase
         
           response = Excon.get(
-            "#{api}/#{prefix}/#{dependency.name}",
+            "#{index}/#{prefix}/#{dependency.name}",
             headers: hdrs,
             idempotent: true,
             **SharedHelpers.excon_defaults

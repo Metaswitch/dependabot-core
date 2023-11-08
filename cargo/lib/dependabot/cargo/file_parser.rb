@@ -171,30 +171,18 @@ module Dependabot
                 "cargo config"
         end
 
-        # Handling sparse registries in common::lib::Dependabot::Source is not 
-        # impossible, but there are only two such "sparse-only" registries which we 
-        # care about ("sparse-only" meaning doesn't support querying via the 
-        # "non-standard API" https://#{registry.dl}/#{crate} on which we otherwise 
-        # rely). Both of those registries would also require logic for client
-        # authentication if we do this in Source, so we use known values here to avoid
-        # this, but record that these are sparse so we can query crates in a way that
-        # they support.
-        if index_url == "sparse+https://crates.microsoft.com/index/"
+        # "Handling" sparse registries in common::lib::Dependabot::Source is not 
+        # impossible (i.e., by getting the config.json file from the index endpoint) 
+        # but sparse registries have their indices at the supplied URI minus the 
+        # `sparse+` header, and we only need to call on the index URI - so just 
+        # supply that information here instead.
+        if index_url.start_with? "sparse+"
           {
             type: "registry+sparse",
             name: registry_name,
-            index: index_url,
-            dl: "https://crates.microsoft.com/api/v1/crates",
-            api: "https://crates.microsoft.com"
-          }
-
-        elsif index_url == "sparse+https://pkgs.dev.azure.com/msazuredev/AzureForOperators/_packaging/rust/Cargo/index/"
-          {
-            type: "registry+sparse",
-            name: registry_name,
-            index: index_url,
-            dl: nil, # We can only query version info using the sparse API for this registry.
-            api: "https://pkgs.dev.azure.com/msazuredev/AzureForOperators/_packaging/rust/Cargo/index"
+            index: index_url[7..-2], # Chop off the final /.
+            dl: nil,
+            api: nil
           }
           
         else
