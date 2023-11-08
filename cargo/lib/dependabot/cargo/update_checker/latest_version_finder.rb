@@ -69,26 +69,44 @@ module Dependabot
         end
 
         def available_versions
-          crates_listing.
-            fetch("versions", []).
-            reject { |v| v["yanked"] }.
-            map { |v| version_class.new(v.fetch("num")) }
+          # Sparse registries return listings in a different format to the "default"
+          # undocumented API on which we rely when our source isn't sparse.
+          if is_sparse
+            crates_listing.
+              reject { |v| v["yanked"] }.
+              map { |v| version_class.new(v.fetch("vers")) }
+          else
+            crates_listing.
+              fetch("versions", []).
+              reject { |v| v["yanked"] }.
+              map { |v| version_class.new(v.fetch("num")) }
+          end
+        end
+
+        def is_sparse
+          return @is_sparse unless @is_sparse.nil?
+          info = dependency.requirements.map { |r| r[:source] }.compact.first
+          @is_sparse = info && info[:type] == "registry+sparse"
         end
 
         def crates_listing
           return @crates_listing unless @crates_listing.nil?
+          @crates_listing = is_sparse ? crates_listing_sparse : crates_listing_non_sparse
+        rescue Excon::Error::Timeout
+          retrying ||= false
+          raise if retrying
 
+          retrying = true
+          sleep(rand(1.0..5.0)) && retry
+        end
+        
+        def crates_listing_non_sparse
           info = dependency.requirements.map { |r| r[:source] }.compact.first
           dl = info && info[:dl] || CRATES_IO_DL
 
           # Default request headers
           hdrs = { "User-Agent" => "Dependabot (dependabot.com)" }
 
-          # crates.microsoft.com requires an auth token
-          if dl == "https://crates.microsoft.com/api/v1/crates"
-            raise "Must specify CARGO_REGISTRIES_CRATES_MS_TOKEN" if ENV["CARGO_REGISTRIES_CRATES_MS_TOKEN"].nil?
-            hdrs["Authorization"] = ENV["CARGO_REGISTRIES_CRATES_MS_TOKEN"]
-          end
 
           response = Excon.get(
             "#{dl}/#{dependency.name}",
@@ -97,13 +115,45 @@ module Dependabot
             **SharedHelpers.excon_defaults
           )
 
-          @crates_listing = JSON.parse(response.body)
-        rescue Excon::Error::Timeout
-          retrying ||= false
-          raise if retrying
+          JSON.parse(response.body)
+        end
 
-          retrying = true
-          sleep(rand(1.0..5.0)) && retry
+        def crates_listing_sparse
+          info = dependency.requirements.map { |r| r[:source] }.compact.first
+          index = info && info[:index] 
+          registry_name = info && info[:name]
+          raise "Registry uses sparse protocol but no index URI found" if index.nil?
+          raise "Registry uses sparse protocol but no registry name found" if registry_name.nil?
+
+          # Default request headers
+          hdrs = { "User-Agent" => "Dependabot (dependabot.com)" }
+
+          # See https://doc.rust-lang.org/cargo/reference/environment-variables.html
+          # for details on how this variable name is decided.
+          registry_token_var_name = "CARGO_REGISTRIES_#{registry_name.upcase.gsub '/[^0-9a-z]/i', '_'}_TOKEN"
+          raise "Must specify #{registry_token_var_name}" if ENV[registry_token_var_name].nil?
+          hdrs["Authorization"] = ENV[registry_token_var_name]
+          
+          name = dependency.name
+          prefix = case name.length
+          when 1..2
+            name.length
+          when 3
+            "3/#{name[0]}"
+          else
+            "#{name[0..1]}/#{name[2..3]}"
+          end
+          prefix = prefix.downcase
+        
+          response = Excon.get(
+            "#{index}/#{prefix}/#{dependency.name}",
+            headers: hdrs,
+            idempotent: true,
+            **SharedHelpers.excon_defaults
+          )
+          
+          response.body.split("\n").
+            map { |v| JSON.parse(v) }
         end
 
         def wants_prerelease?

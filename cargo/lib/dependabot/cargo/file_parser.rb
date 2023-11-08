@@ -171,17 +171,20 @@ module Dependabot
                 "cargo config"
         end
 
-        # Use known values from crates.microsoft.com rather than
-        # querying them, which avoids having to handle authentication
-        # and the unusual "sparse+..." URL.
-        if index_url == "sparse+https://crates.microsoft.com/index/"
+        # "Handling" sparse registries in common::lib::Dependabot::Source is not 
+        # impossible (i.e., by getting the config.json file from the index endpoint) 
+        # but sparse registries have their indices at the supplied URI minus the 
+        # `sparse+` header, and we only need to call on the index URI - so just 
+        # supply that information here instead.
+        if index_url.start_with? "sparse+"
           {
-            type: "registry",
+            type: "registry+sparse",
             name: registry_name,
-            index: index_url,
-            dl: "https://crates.microsoft.com/api/v1/crates",
-            api: "https://crates.microsoft.com"
+            index: index_url.delete_prefix("sparse+").delete_suffix("/"),
+            dl: nil,
+            api: nil
           }
+          
         else
           source = Source.from_url(index_url)
           registry_fetcher = RegistryFetcher.new(
@@ -220,7 +223,8 @@ module Dependabot
         @cargo_config ||=
           Pathname
             .new(Dir.pwd)
-            .ascend.map { |p| p + ".cargo/config" }
+            .ascend.map { |p| [p + ".cargo/config", p + ".cargo/config.toml"] }
+            .flatten
             .chain(cargo_home_dir.nil? ? [] : [Pathname.new(cargo_home_dir)])
             .select(&:file?)
             .map { |f| TomlRB.load_file(f) }
