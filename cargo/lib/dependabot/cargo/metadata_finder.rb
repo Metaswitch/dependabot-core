@@ -17,6 +17,7 @@ module Dependabot
         case new_source_type
         when "default" then find_source_from_crates_listing
         when "registry" then find_source_from_crates_listing
+        when "registry+sparse" then return # We can't find source information from sparse registries.
         when "git" then find_source_from_git_url
         else raise "Unexpected source type: #{new_source_type}"
         end
